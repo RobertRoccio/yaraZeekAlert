@@ -28,10 +28,6 @@ yaraAlertConfigFile=os.getcwd() + "/yaraAlert.conf"
 yaraRulesPath=os.getcwd() + "/yara-rules"
 actionsLogPath=os.getcwd() + "/logs/action.log"
 sevenZipCommand = "/bin/7za"
-#alertedFilesFolder =  "/home/hierophant/zeek-workspace/yara/alerted-files"
-#extractedFilePath = "/home/hierophant/zeek-workspace/extracted-files"
-#yaraRulesPath = "/home/hierophant/zeek-workspace/yaraZeekAlert"
-#yaraAlertConfigFile = "/home/hierophant/zeek-workspace/yaraZeekAlert/yaraAlert.conf"
 
 if not os.path.isfile(yaraAlertConfigFile):
 	print("file does not exist: " + yaraAlertConfigFile)
@@ -59,7 +55,6 @@ def hashes(fname):
 	return [md5,sha1,sha256]
 
 def searchContext(searchPath, pattern,archived):
-		#flog = open("/home/hierophant/zeek-workspace/actions/actions.log","w+")
 		flog = open(actionsLogPath,"w+")
 		flog.write("searching for pattern: " + pattern + " in " + searchPath)
 
@@ -143,14 +138,9 @@ def sendAlertEmail(message,fromaddr,recipient,filepath,context):
 	server.ehlo()
 
 	# Base64 encoding prevents issues with special characters with passwords/usernames
-	#mailPasswordB64 = mailPassword.encode("base64")
-	#mailUsernameB64 = mailUsername.encode("base64")
 	mailUsernameEncoded = base664.encode(mailUsername)
 	mailPasswordEncoded = base64.encode(mailPassword)
 	server.login(base64.decode(mailUsernameEncoded),base64.decode(mailPasswordEncoded))
-	#server.login(mailUsername,mailPassword)
-	#server.login(mailUsernameB64.decode("base64"),mailPasswordB64.decode("base64"))
-	#text = msg.as_string()
 	server.send_message(msg)
 	server.quit()
 	
