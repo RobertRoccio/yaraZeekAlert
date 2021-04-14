@@ -1,0 +1,4 @@
+yaraAlert.conf
+extracted-files/*
+alerted-files/*
+logs/*
