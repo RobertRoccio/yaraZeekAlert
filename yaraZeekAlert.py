@@ -15,18 +15,25 @@ import sys
 import hashlib
 import smtplib
 import glob
-from base64 import encode,decode
+from base64 import b64encode, b64decode
 from email.mime.multipart import MIMEMultipart
 from email.message import EmailMessage
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
 
-alertedFilesFolder=os.getcwd() + "/alerted-files"
-extractedFilePath=os.getcwd() + "/extracted-files"
-yaraAlertConfigFile=os.getcwd() + "/yaraAlert.conf"
-yaraRulesPath=os.getcwd() + "/yara-rules"
-actionsLogPath=os.getcwd() + "/logs/action.log"
+
+print('''
+Starting YaraZeek File Scanner....
+
+''')
+
+running_dir = os.path.dirname(__file__)
+alertedFilesFolder=running_dir + "/alerted-files"
+extractedFilePath=running_dir + "/extracted-files"
+yaraAlertConfigFile=running_dir + "/yaraAlert.conf"
+yaraRulesPath=running_dir + "/yara-rules"
+actionsLogPath=running_dir + "/logs/action.log"
 sevenZipCommand = "/bin/7za"
 
 if not os.path.isfile(yaraAlertConfigFile):
@@ -48,6 +55,7 @@ with open(yaraAlertConfigFile,"r") as f:
 			mailDisplayFrom = lineLst[1]
 		elif lineLst[0] in "mailTo":
 			mailTo = lineLst[1]
+
 def hashes(fname):
 	md5 = hashlib.md5(open(fname,'rb').read()).hexdigest()
 	sha1 = hashlib.sha1(open(fname,'rb').read()).hexdigest()
@@ -74,21 +82,19 @@ def searchContext(searchPath, pattern,archived):
 			else:
 				command = "/bin/zgrep " + pattern + " " + f
 				flog.write("command :" + command)
-				print(command)
 			try:
 				flog.write("before appending \n" + out)
-				out += subprocess.check_output(command, shell=True)
+				ret = subprocess.check_output(command, shell=True) 
+				out += ret.decode("utf-8")
 				flog.write("after appending \n" + out)
-			except:
+			except Exception as e:
 				pass
 
-		print("context found in path: " + searchPath)
 		flog.write("context found in path: \n" + searchPath)
 
 		if out =="":
 			out = "Context not found in current logs \n"
 
-		print(out)
 		flog.write("output: " + out)
 		return out
 
@@ -100,30 +106,26 @@ def sendAlertEmail(message,fromaddr,recipient,filepath,context):
 	msg['To'] = recipient
 	msg['Subject'] = "YARA Alert"
 
-	body = "alerted rules: " + str(message[0]) + "\n"
-	body = body + "filepath: " + str(message[1]) + "\n"
-	body = body + "md5sum : " + str(message[2]) + "\n"
-	body = body + "sha1sum: " + str(message[3]) + "\n"
-	body = body + "sha256sum: " + str(message[4]) + "\n\n"
+	body = "Alerted Rules: " + str(message[0]) + "\n"
+	body = body + "File Path: " + str(message[1]) + "\n"
+	body = body + "md5 Checksum : " + str(message[2]) + "\n"
+	body = body + "sha1 Checksum: " + str(message[3]) + "\n"
+	body = body + "sha256 Checksum: " + str(message[4]) + "\n\n"
 
 	
 	filename = filepath.split("/")[-1]	
 	generatedZip = alertedFilesFolder + "/" + filename + ".zip"
-	print("generatedZip: " + generatedZip)
 	
 	if os.path.isfile(generatedZip):
 		os.remove(generatedZip)
 
 	rc = subprocess.call([sevenZipCommand, 'a', '-pinfected', '-y', generatedZip, filepath])
 
-	body = body + "saved Zip file: " + generatedZip + "\n\n"
-	body = body + "context: " + context + "\n"
+	body = body + "Saved File Path: " + generatedZip + "\n\n"
+	body = body + "Context: " + context + "\n"
 
 	filesize = os.path.getsize(generatedZip)
 	
-	print(body)
-	
-	print("filepath: " + filepath + " size: " + str(filesize))
 	if os.path.getsize(generatedZip) < 10000000:
 		part = MIMEBase('application', "zip")
 		part.set_payload(open(generatedZip, "rb").read())
@@ -138,27 +140,26 @@ def sendAlertEmail(message,fromaddr,recipient,filepath,context):
 	server.ehlo()
 
 	# Base64 encoding prevents issues with special characters with passwords/usernames
-	mailUsernameEncoded = base664.encode(mailUsername)
-	mailPasswordEncoded = base64.encode(mailPassword)
-	server.login(base64.decode(mailUsernameEncoded),base64.decode(mailPasswordEncoded))
+	mailUsernameEncoded = b64encode(bytes(mailUsername, encoding="utf-8"))
+	mailPasswordEncoded = b64encode(bytes(mailPassword, encoding="utf-8"))
+	server.login(str(b64decode(mailUsernameEncoded), encoding="utf-8"),str(b64decode(mailPasswordEncoded), encoding="utf-8"))
 	server.send_message(msg)
 	server.quit()
 	
 fout = open("/tmp/yaraAllRules","wb")
 
-print(extractedFilePath)
 yaraRules = subprocess.check_output("find " + yaraRulesPath + " -name '*.yar' -exec cat {} + ", shell=True)
 
 fout.write(yaraRules)
 fout.close()
 
+file_matches=0
 start = time.time()
 #scanOutput =  subprocess.check_output("yara -r /tmp/yaraAllRules " + extractedFilePath, shell=True)
 scanOutput = subprocess.check_output("yara -r /tmp/yaraAllRules " + extractedFilePath + " -d extension=\"noext\" -d filename=\"nofilename\" -d filepath=\"nofilepath\" -d filetype=\"nofiletype\"", shell=True)
 
 end = time.time()
 
-print("Run time: " + str((end - start)))
 i=0
 scanOutput = scanOutput.decode().split('\n')
 
@@ -175,10 +176,11 @@ for line in scanOutput:
 			filesWithAlerts[filepath] = [rule]
 
 for filepath, matchedRules in filesWithAlerts.items():
-	print("filepath: " + filepath + " v: " +  str(matchedRules))
+	print("File found matching with rule: " + str(matchedRules))
+	file_matches = file_matches + 1
 	entry = [str(matchedRules),filepath] + hashes(filepath)
 	try:
-		print("send alert email")
+		print("Sending Email Alert...")
 		pattern = filepath.split("/")[-1].split("-")[-1].split(".")[-2]
 		
 		context = searchContext("/usr/local/zeek/logs/current", pattern,archived=False)
@@ -186,7 +188,7 @@ for filepath, matchedRules in filesWithAlerts.items():
 		if context == "":
 			print("No additional context was found, searching on the historical log.")
 		else:
-			print(context)
+			print("\nContext Found:\n" + context)
 
 		sendAlertEmail(entry,mailDisplayFrom,mailTo,filepath,context)
 	except Exception as e:
@@ -196,3 +198,7 @@ files = glob.glob(extractedFilePath + "/*")
 
 for f in files:
 	os.remove(f)
+
+print("\nRun time: " + str((end - start)))
+print("Total suspicious files found: " + str(file_matches))
+print("Exiting now...")
